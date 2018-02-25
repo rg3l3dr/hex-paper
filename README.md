@@ -48,7 +48,7 @@ The combination of IPFS & FileCoin could be used in the future to create a persi
 
 ### DAT Project
 
-[Dat](https://datproject.org/) is described a protocol designed for syncing folders of data, even if they are large or changing constantly. It is primarily concerned with the selective replication of large data sets in the TB to PB range for the scientific and academic communities.  Dat is also inspired by git and has similarities to IPFS, in that objects are versioned, content addressed and linked into a Merkle DAG data structure.  
+[Dat](https://datproject.org/) is described as a protocol designed for syncing folders of data, even if they are large or changing constantly. It is primarily concerned with the selective replication of large data sets in the TB to PB range for the scientific and academic communities.  Dat is also inspired by git and has similarities to IPFS, in that objects are versioned, content addressed and linked into a Merkle DAG data structure.  
 
 While Dat is very good at synching large data sets, certain features make it unsuitable for hardware project management.  Like IPFS, there is no inherent security model. The only way to protect a sensitive dat repository is to limit discovery or encrypt the contents, with the same problems as mentioned earlier for IPFS.  Dat projects are shared via private links that give users read only access to a projects contents.  At this time, there is no method for collaborative editing of a shared project, making Dat a non-starter.  Furthermore, Dat does not store the full revision history of a project on each node.  Rather it relies on a central server to act as the dataset archive and only stores a requested version of the data set on each peer machine.  This makes sense considering the size of the data sets being shared but would lead to a poor user experience for the use case of hardware project management, requiring a network connection and replication every time a past revision needs to be checked out.
 
@@ -79,7 +79,13 @@ block = {
   key: hash(value),
   value: {
     creator: hash(rsa_public_key),
-    data: { ... },
+    data: {
+      type: string,
+      parent: parent_block_key,
+      editor: hash(rsa_public_key) ,
+      signature: sign(content, rsa_private_key),
+      content: { ... }
+    },
     timeStamp: unix_timestamp,
     signature: sign(data, rsa_private_key)
   }
@@ -93,6 +99,9 @@ The data content of each block is signed with the RSA private key of its creator
 A block may contain links to other blocks, reflecting a previous version of the data that is being recorded.  These links form a chain, which is a log or feed of the changes for a given data type or record over time.  A new chain is created by adding a genesis block, or a block that has no links.  Blocks may only be added, never modified, or deleted.  
 
 Only the creator of a block may extend the chain by publishing a new block.  This allows for simple authentication of new blocks on an existing chain, by checking if the parent block has the same creator public key.  Peers may share read-write access to chains through the use of a shared group private key.  
+
+##### Hex Blockchain (Object Log)
+![A Hex Blockchain (Object Log)](blockchain.png)
 
 #### Validating Blocks
 
@@ -141,10 +150,14 @@ Data encapsulated in a block may be one of several types, which together make up
 data = {
   type: 'peer',
   parent: parent_block_key,
-  name: string,
-  email: string,
-  publicKey: hash(rsa_public_key),
-  privateKey: hash(rsa_private_key),
+  editor: peer_key,
+  signature: sign(content, rsa_private_key),
+  content: {
+    name: string,
+    email: string,
+    publicKey: hash(rsa_public_key),
+    privateKey: hash(rsa_private_key)
+  }
 }
 ```
 
@@ -155,11 +168,13 @@ data = {
   type: 'group',
   parent: parent_block_key,
   editor: peer_key,
-  name: string,
-  publicKey: hash(rsa_public_key),
-  privateKey: hash(rsa_private_key),
-  secret: string,
-  members: [peerIds]
+  signature: sign(content, rsa_private_key),
+  content: {
+    name: string,
+    publicKey: hash(rsa_public_key),
+    privateKey: hash(rsa_private_key),
+    members: [peer_key, ...]
+  }
 }
 ```
 
@@ -168,14 +183,17 @@ data = {
 ```javascript
 data = {
   type: 'project',
-  editor: peer_id,
   parents: [parent_block_key, ...],
-  name: string,
-  build: boolean,
-  revision: string,
-  message: string,
-  files: [file_block_key, ...],
-  parts: [part_block_key, ...],
+  editor: peer_key,
+  signature: sign(content, rsa_private_key),
+  content: {
+    name: string,
+    build: boolean,
+    revision: string,
+    message: string,
+    files: [file_block_key, ...],
+    parts: [part_block_key, ...],
+  }
 }
 ```
 
@@ -184,12 +202,15 @@ data = {
 ```javascript
 data = {
   type: 'file',
-  editor: peer_key,
   parents: [parent_block_key, ...],
-  key: string,
-  name: string,
-  base: string,
-  patch: string,
+  editor: peer_key,
+  signature: sign(content, rsa_private_key),
+  content: {
+    key: string,
+    name: string,
+    base: string,
+    patch: string,
+  }
 }
 ```
 
@@ -198,10 +219,13 @@ data = {
 ```javascript
 data = {
   type: 'part',
-  editor: peer_key,
   parents: [parent_block_key, ...]
-  project: project_key,
-  quantity: integer,
+  editor: peer_key,
+  signature: sign(content, rsa_private_key),
+  content: {
+    project: project_key,
+    quantity: integer
+  }
 }
 ```
 
@@ -214,6 +238,10 @@ Versioning large binary files without some form of delta storage can quickly lea
 Once a base or patch has been created it is then compressed using the Brotli Compression algorithm, resulting in a further size reduction of 3 - 10 X based on the file type.  Compressed files are then encrypted using AES symmetric keys that are generated randomly each time a file is versioned.  The AES key is stored for each block in the file object log, meaning that only a peer who has access to the group key corresponding to that file block can decrypt the corresponding file.
 
 As a final step the SHA256 hash of each file is computed and used as the name and address for local storage in a content-addressed binary large object (blob) store.  This serves to deduplicate files both locally and across the network, while allowing anyone to validate the authenticity of a file and its contents.  The hash address is then stored in the data property of the corresponding file block, creating a link between the block database and the local file system.
+
+#### File Archiving & Retrieval
+
+![Local File Storage](file_protocol.png)
 
 ### Local Hex Folder
 
